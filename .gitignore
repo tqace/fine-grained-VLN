@@ -1,0 +1,6 @@
+*.pyc
+*.so
+*.zip
+/snap
+/r2r_src/.idea
+/img_features
