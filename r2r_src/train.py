@@ -1,5 +1,5 @@
 import torch
-
+import ipdb
 import os
 import time
 import json
@@ -43,11 +43,10 @@ feedback_method = args.feedback # teacher or sample
 print(args)
 
 
-def train_speaker(train_env, tok, n_iters, log_every=1, val_envs={}):
+def train_speaker(train_env, tok, n_iters, log_every=500, val_envs={}):
     writer = SummaryWriter(logdir=log_dir)
     listner = Seq2SeqAgent(train_env, "", tok, args.maxAction)
     speaker = Speaker(train_env, listner, tok)
-    speaker.load(args.load)
 
     if args.fast_train:
         log_every = 40
@@ -72,6 +71,7 @@ def train_speaker(train_env, tok, n_iters, log_every=1, val_envs={}):
             print("............ Evaluating %s ............." % env_name)
             speaker.env = env
             path2inst, loss, word_accu, sent_accu = speaker.valid()
+            #ipdb.set_trace()
             path_id = next(iter(path2inst.keys()))
             print("Inference: ", tok.decode_sentence(path2inst[path_id]))
             print("GT: ", evaluator.gt[str(path_id)]['instructions'])

@@ -14,7 +14,7 @@ import random
 import networkx as nx
 from param import args
 
-from utils import load_datasets, load_nav_graphs, Tokenizer
+from utils import load_datasets_fg, load_nav_graphs, Tokenizer
 
 csv.field_size_limit(sys.maxsize)
 
@@ -102,19 +102,26 @@ class R2RBatch():
             self.tok = tokenizer
         scans = []
         for split in splits:
-            for item in load_datasets([split]):
+            for item in load_datasets_fg([split]):
                 # Split multiple instructions into separate entries
                 for j,instr in enumerate(item['instructions']):
                     if item['scan'] not in self.env.featurized_scans:   # For fast training
                         continue
-                    new_item = dict(item)
-                    new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
-                    new_item['instructions'] = instr
-                    if tokenizer:
-                        new_item['instr_encoding'] = tokenizer.encode_sentence(instr)
-                    if not tokenizer or new_item['instr_encoding'] is not None:  # Filter the wrong data
-                        self.data.append(new_item)
-                        scans.append(item['scan'])
+                    if j==len(eval(item["new_instructions"])):
+                            continue
+                    subpaths,pathixs = self.getSubPath(eval(item["new_instructions"])[j])
+                    for k,subpath in enumerate(subpaths):
+                        pathix = pathixs[k]
+                        new_item = dict(item)
+                        new_item['instr_id'] = '%s_%d_%d' % (item['path_id'], j, k)
+                        new_item['instructions'] = subpath+'.'
+                        new_item['path_id'] = new_item['instr_id']
+                        new_item['path'] = item['path'][item["chunk_view"][j][pathix[0]][0]-1:item["chunk_view"][j][pathix[1]][1]]
+                        if tokenizer:
+                            new_item['instr_encoding'] = tokenizer.encode_sentence(new_item['instructions'])
+                        if not tokenizer or new_item['instr_encoding'] is not None:  # Filter the wrong data
+                            self.data.append(new_item)
+                            scans.append(item['scan'])
         if name is None:
             self.name = splits[0] if len(splits) > 0 else "FAKE"
         else:
@@ -137,6 +144,20 @@ class R2RBatch():
         # It means that the fake data is equals to data in the supervised setup
         self.fake_data = self.data
         print('R2RBatch loaded with %d instructions, using splits: %s' % (len(self.data), ",".join(splits)))
+    
+    def getSubPath(self,Path):
+        subPaths = []
+        pathixs = []
+        def combine(L):
+            combined=[]
+            for l in L:
+                combined+=l
+            return combined
+        for i in range(0,len(Path)):
+            for j in range(i+1, len(Path)+1):
+                subPaths.append(' '.join(combine(Path[i:j])))
+                pathixs.append((i,j-1))
+        return subPaths,pathixs
 
     def size(self):
         return len(self.data)
@@ -294,7 +315,7 @@ class R2RBatch():
                 'navigableLocations' : state.navigableLocations,
                 'instructions' : item['instructions'],
                 'teacher' : self._shortest_path_action(state, item['path'][-1]),
-                'path_id' : item['path_id']
+                'path_id' : item['path_id'],
                 'path': item['path']
             })
             if 'instr_encoding' in item:

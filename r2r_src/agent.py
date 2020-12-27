@@ -291,7 +291,6 @@ class Seq2SeqAgent(BaseAgent):
         masks = []
         entropys = []
         ml_loss = 0.
-
         h1 = h_t
         for t in range(self.episode_len):
 
@@ -317,7 +316,6 @@ class Seq2SeqAgent(BaseAgent):
                         if c['viewpointId'] in visited[ob_id]:
                             candidate_mask[ob_id][c_id] = 1
             logit.masked_fill_(candidate_mask, -float('inf'))
-
             # Supervised training
             target = self._teacher_action(perm_obs, ended)
             ml_loss += self.criterion(logit, target)
@@ -347,6 +345,7 @@ class Seq2SeqAgent(BaseAgent):
             for i, next_id in enumerate(cpu_a_t):
                 if next_id == (candidate_leng[i]-1) or next_id == args.ignoreid or ended[i]:    # The last action is <end>
                     cpu_a_t[i] = -1             # Change the <end> and ignore action to -1
+
 
             # Make action and get the new state
             self.make_equiv_action(cpu_a_t, perm_obs, perm_idx, traj)

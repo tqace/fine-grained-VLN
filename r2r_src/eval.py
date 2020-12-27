@@ -1,5 +1,5 @@
 ''' Evaluation of agent trajectories '''
-
+import ipdb
 import json
 import os
 import sys
@@ -10,7 +10,7 @@ import pprint
 pp = pprint.PrettyPrinter(indent=4)
 
 from env import R2RBatch
-from utils import load_datasets, load_nav_graphs
+from utils import load_datasets,load_datasets_fg, load_nav_graphs
 from agent import BaseAgent
 
 
@@ -25,18 +25,42 @@ class Evaluation(object):
         self.instr_ids = []
         self.scans = []
         for split in splits:
-            for item in load_datasets([split]):
-                if scans is not None and item['scan'] not in scans:
-                    continue
-                self.gt[str(item['path_id'])] = item
-                self.scans.append(item['scan'])
-                self.instr_ids += ['%s_%d' % (item['path_id'], i) for i in range(len(item['instructions']))]
+            for item in load_datasets_fg([split]):
+                for j,instr in enumerate(item['instructions']):
+                    if scans is not None and item['scan'] not in scans:
+                        continue
+                    if j==len(eval(item["new_instructions"])):
+                            continue
+                    subpaths,pathixs = self.getSubPath(eval(item["new_instructions"])[j])
+                    for k,subpath in enumerate(subpaths):
+                        pathix = pathixs[k]
+                        path_id = '%s_%d_%d' % (item['path_id'], j, k)
+                        new_item = item.copy()
+                        new_item['instructions'] = [subpath+'.']
+                        new_item['path'] = item['path'][item["chunk_view"][j][pathix[0]][0]-1:item["chunk_view"][j][pathix[1]][1]]
+                        self.gt[str(path_id)] = new_item
+                        self.instr_ids += '%s_%d_%d' % (item['path_id'], j, k)
+                    self.scans.append(item['scan'])
         self.scans = set(self.scans)
         self.instr_ids = set(self.instr_ids)
         self.graphs = load_nav_graphs(self.scans)
         self.distances = {}
         for scan,G in self.graphs.items(): # compute all shortest paths
             self.distances[scan] = dict(nx.all_pairs_dijkstra_path_length(G))
+    
+    def getSubPath(self,Path):
+        subPaths = []
+        pathixs = []
+        def combine(L):
+            combined=[]
+            for l in L:
+                combined+=l
+            return combined
+        for i in range(0,len(Path)):
+            for j in range(i+1, len(Path)+1):
+                subPaths.append(' '.join(combine(Path[i:j])))
+                pathixs.append((i,j-1))
+        return subPaths,pathixs
 
     def _get_nearest(self, scan, goal_id, path):
         near_id = path[0][0]
