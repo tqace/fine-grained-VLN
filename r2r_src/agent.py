@@ -6,7 +6,7 @@ import numpy as np
 import random
 import math
 import time
-
+from speaker import Speaker
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
@@ -20,6 +20,7 @@ import model
 import param
 from param import args
 from collections import defaultdict
+
 
 
 class BaseAgent(object):
@@ -93,6 +94,8 @@ class Seq2SeqAgent(BaseAgent):
         self.tok = tok
         self.episode_len = episode_len
         self.feature_size = self.env.feature_size
+        self.speaker = Speaker(env, None, tok)
+        self.speaker.load(args.speaker)
 
         # Models
         enc_hidden_size = args.rnn_dim//2 if args.bidir else args.rnn_dim
@@ -153,6 +156,16 @@ class Seq2SeqAgent(BaseAgent):
             for j, c in enumerate(ob['candidate']):
                 candidate_feat[i, j, :] = c['feature']                         # Image feat
         return torch.from_numpy(candidate_feat).cuda(), candidate_leng
+
+    def _candidate_variable_speaker(self, obs, actions):
+        candidate_feat = np.zeros((len(obs), self.feature_size + args.angle_feat_size), dtype=np.float32)
+        for i, (ob, act) in enumerate(zip(obs, actions)):
+            if act == -1:  # Ignore or Stop --> Just use zero vector as the feature
+                pass
+            else:
+                c = ob['candidate'][act]
+                candidate_feat[i, :] = c['feature'] # Image feat
+        return torch.from_numpy(candidate_feat).cuda()
 
     def get_input_feat(self, obs):
         input_a_t = np.zeros((len(obs), args.angle_feat_size), np.float32)
@@ -269,6 +282,7 @@ class Seq2SeqAgent(BaseAgent):
 
         # Init the reward shaping
         last_dist = np.zeros(batch_size, np.float32)
+        last_meteor = np.zeros(batch_size, np.float32)
         for i, ob in enumerate(perm_obs):   # The init distance from the view point to the target
             last_dist[i] = ob['distance']
 
@@ -291,15 +305,17 @@ class Seq2SeqAgent(BaseAgent):
         masks = []
         entropys = []
         ml_loss = 0.
-
+        img_feats = []
+        can_feats = []
+        length = np.zeros(len(obs), np.int64)
         h1 = h_t
         for t in range(self.episode_len):
 
             input_a_t, f_t, candidate_feat, candidate_leng = self.get_input_feat(perm_obs)
+            img_feats.append(self._feature_variable(perm_obs))
             if speaker is not None:       # Apply the env drop mask to the feat
                 candidate_feat[..., :-args.angle_feat_size] *= noise
                 f_t[..., :-args.angle_feat_size] *= noise
-
             h_t, c_t, logit, h1 = self.decoder(input_a_t, f_t, candidate_feat,
                                                h_t, h1, c_t,
                                                ctx, ctx_mask,
@@ -346,8 +362,9 @@ class Seq2SeqAgent(BaseAgent):
             cpu_a_t = a_t.cpu().numpy()
             for i, next_id in enumerate(cpu_a_t):
                 if next_id == (candidate_leng[i]-1) or next_id == args.ignoreid or ended[i]:    # The last action is <end>
-                    cpu_a_t[i] = -1             # Change the <end> and ignore action to -1
-
+                    cpu_a_t[i] = -1      # Change the <end> and ignore action to -1
+            length += (1 - ended)
+            can_feats.append(self._candidate_variable_speaker(perm_obs,cpu_a_t))
             # Make action and get the new state
             self.make_equiv_action(cpu_a_t, perm_obs, perm_idx, traj)
             obs = np.array(self.env._get_obs())
@@ -355,8 +372,11 @@ class Seq2SeqAgent(BaseAgent):
 
             # Calculate the mask and reward
             dist = np.zeros(batch_size, np.float32)
+            meteor = np.zeros(batch_size, np.float32)
             reward = np.zeros(batch_size, np.float32)
             mask = np.ones(batch_size, np.float32)
+            img_feats_ = torch.stack(img_feats, 1).contiguous()
+            can_feats_ = torch.stack(can_feats, 1).contiguous()
             for i, ob in enumerate(perm_obs):
                 dist[i] = ob['distance']
                 if ended[i]:            # If the action is already finished BEFORE THIS ACTION.
@@ -369,18 +389,37 @@ class Seq2SeqAgent(BaseAgent):
                             reward[i] = 2.
                         else:                   # Incorrect
                             reward[i] = -2.
-                    else:                       # The action is not end
-                        reward[i] = - (dist[i] - last_dist[i])      # Change of distance
-                        if reward[i] > 0:                           # Quantification
-                            reward[i] = 1
-                        elif reward[i] < 0:
-                            reward[i] = -1
-                        else:
-                            raise NameError("The action doesn't change the move")
+                    else: # The action is not end
+                        ctx_speaker = self.speaker.encoder(can_feats_, img_feats_, length)
+                        ctx_mask_speaker = utils.length2mask(length)
+                        words = []
+                        log_probs = []
+                        entropies = []
+                        h_t_speaker = torch.zeros(1, batch_size, args.rnn_dim).cuda()
+                        c_t_speaker = torch.zeros(1, batch_size, args.rnn_dim).cuda()
+                        ended_speaker = np.zeros(len(obs), np.bool)
+                        word = np.ones(len(obs), np.int64) * self.tok.word_to_index['<BOS>']
+                        word = torch.from_numpy(word).view(-1, 1).cuda()
+                        for j in range(args.maxDecode):
+                            logits, h_t_speaker, c_t_speaker = self.speaker.decoder(word, ctx_speaker, ctx_mask_speaker, h_t_speaker, c_t_speaker)
+                            logits = logits.squeeze()
+                            logits[:, self.tok.word_to_index['<UNK>']] = -float("inf")
+                            values, word = logits.max(1)
+                            cpu_word = word.cpu().numpy()
+                            cpu_word[ended_speaker] = self.tok.word_to_index['<PAD>']
+                            words.append(cpu_word)
+                            word = word.view(-1, 1)
+                            ended_speaker = np.logical_or(ended_speaker, cpu_word == self.tok.word_to_index['<EOS>'])
+                            if ended_speaker.all():
+                                break
+                        words = np.stack(words, 1)
+                        words_i = self.speaker.tok.decode_sentence(self.speaker.tok.shrink(words[i]))
+                        meteor[i] = utils.get_meteor(ob['instructions'],words_i)
+                        reward[i] = (meteor[i])# - last_meteor[i])      # Change of distance
             rewards.append(reward)
             masks.append(mask)
             last_dist[:] = dist
-
+            last_meteor[:] = meteor
             # Update the finished actions
             # -1 means ended or ignored (already ended)
             ended[:] = np.logical_or(ended, (cpu_a_t == -1))

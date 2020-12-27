@@ -294,7 +294,7 @@ class R2RBatch():
                 'navigableLocations' : state.navigableLocations,
                 'instructions' : item['instructions'],
                 'teacher' : self._shortest_path_action(state, item['path'][-1]),
-                'path_id' : item['path_id']
+                'path_id' : item['path_id'],
                 'path': item['path']
             })
             if 'instr_encoding' in item:

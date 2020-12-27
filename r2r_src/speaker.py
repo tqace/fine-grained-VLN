@@ -59,6 +59,13 @@ class Speaker():
             self.encoder_optimizer.step()
             self.decoder_optimizer.step()
 
+    def _feature_variable(self, obs):
+        ''' Extract precomputed features into variable. '''
+        features = np.empty((len(obs), args.views, self.feature_size + args.angle_feat_size), dtype=np.float32)
+        for i, ob in enumerate(obs):
+            features[i, :, :] = ob['feature']   # Image feat
+        return Variable(torch.from_numpy(features), requires_grad=False).cuda()
+
     def get_insts(self, wrapper=(lambda x: x)):
         # Get the caption for all the data
         self.env.reset_epoch(shuffle=True)
@@ -180,7 +187,7 @@ class Speaker():
             if viewpoints is not None:
                 for i, ob in enumerate(obs):
                     viewpoints[i].append(ob['viewpoint'])
-            img_feats.append(self.listener._feature_variable(obs))
+            img_feats.append(self._feature_variable(obs))
             teacher_action = self._teacher_action(obs, ended)
             teacher_action = teacher_action.cpu().numpy()
             for i, act in enumerate(teacher_action):

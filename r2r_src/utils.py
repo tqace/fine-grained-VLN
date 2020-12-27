@@ -14,6 +14,9 @@ import numpy as np
 import networkx as nx
 from param import args
 
+from pycocoevalcap.tokenizer.ptbtokenizer import PTBTokenizer
+from pycocoevalcap.meteor.meteor import Meteor
+import jieba
 
 # padding, unknown word, end of sentence
 base_vocab = ['<PAD>', '<UNK>', '<EOS>']
@@ -46,6 +49,11 @@ def load_nav_graphs(scans):
             graphs[scan] = G
     return graphs
 
+def get_meteor(ref,can):
+    ref = {1:[ref]}
+    can = {1:[can]}
+    score, _ = Meteor().compute_score(ref,can)
+    return score
 
 def load_datasets(splits):
     """
