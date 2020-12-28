@@ -1,4 +1,4 @@
-name=agent_fg_rewardi
+name=agent_fg
 flag="--attn soft --train listener 
       --featdropout 0.3
       --speaker snap/speaker/state_dict/best_val_unseen_bleu

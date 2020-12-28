@@ -1,5 +1,5 @@
 import torch
-
+import ipdb
 import os
 import time
 import json
@@ -125,7 +125,6 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
         listner.logs = defaultdict(list)
         interval = min(log_every, n_iters-idx)
         iter = idx + interval
-
         # Train for log_every interval
         if aug_env is None:     # The default training process
             listner.env = train_env

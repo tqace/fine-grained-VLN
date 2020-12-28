@@ -20,7 +20,7 @@ import model
 import param
 from param import args
 from collections import defaultdict
-
+import time
 
 
 class BaseAgent(object):
@@ -282,7 +282,7 @@ class Seq2SeqAgent(BaseAgent):
 
         # Init the reward shaping
         last_dist = np.zeros(batch_size, np.float32)
-        last_meteor = np.zeros(batch_size, np.float32)
+        last_rouge = np.zeros(batch_size, np.float32)
         for i, ob in enumerate(perm_obs):   # The init distance from the view point to the target
             last_dist[i] = ob['distance']
 
@@ -371,63 +371,67 @@ class Seq2SeqAgent(BaseAgent):
             perm_obs = obs[perm_idx]                    # Perm the obs for the resu
 
             # Calculate the mask and reward
-            dist = np.zeros(batch_size, np.float32)
-            meteor = np.zeros(batch_size, np.float32)
-            reward = np.zeros(batch_size, np.float32)
-            mask = np.ones(batch_size, np.float32)
-            img_feats_ = torch.stack(img_feats, 1).contiguous()
-            can_feats_ = torch.stack(can_feats, 1).contiguous()
-            for i, ob in enumerate(perm_obs):
-                dist[i] = ob['distance']
-                if ended[i]:            # If the action is already finished BEFORE THIS ACTION.
-                    reward[i] = 0.
-                    mask[i] = 0.
-                else:       # Calculate the reward
-                    action_idx = cpu_a_t[i]
-                    if action_idx == -1:        # If the action now is end
-                        if dist[i] < 3:         # Correct
-                            reward[i] = 2.
-                        else:                   # Incorrect
-                            reward[i] = -2.
-                    else: # The action is not end
-                        ctx_speaker = self.speaker.encoder(can_feats_, img_feats_, length)
-                        ctx_mask_speaker = utils.length2mask(length)
-                        words = []
-                        log_probs = []
-                        entropies = []
-                        h_t_speaker = torch.zeros(1, batch_size, args.rnn_dim).cuda()
-                        c_t_speaker = torch.zeros(1, batch_size, args.rnn_dim).cuda()
-                        ended_speaker = np.zeros(len(obs), np.bool)
-                        word = np.ones(len(obs), np.int64) * self.tok.word_to_index['<BOS>']
-                        word = torch.from_numpy(word).view(-1, 1).cuda()
-                        for j in range(args.maxDecode):
-                            logits, h_t_speaker, c_t_speaker = self.speaker.decoder(word, ctx_speaker, ctx_mask_speaker, h_t_speaker, c_t_speaker)
-                            logits = logits.squeeze()
-                            logits[:, self.tok.word_to_index['<UNK>']] = -float("inf")
-                            values, word = logits.max(1)
-                            cpu_word = word.cpu().numpy()
-                            cpu_word[ended_speaker] = self.tok.word_to_index['<PAD>']
-                            words.append(cpu_word)
-                            word = word.view(-1, 1)
-                            ended_speaker = np.logical_or(ended_speaker, cpu_word == self.tok.word_to_index['<EOS>'])
-                            if ended_speaker.all():
-                                break
-                        words = np.stack(words, 1)
-                        words_i = self.speaker.tok.decode_sentence(self.speaker.tok.shrink(words[i]))
-                        meteor[i] = utils.get_meteor(ob['instructions'],words_i)
-                        reward[i] = (meteor[i])# - last_meteor[i])      # Change of distance
-            rewards.append(reward)
-            masks.append(mask)
-            last_dist[:] = dist
-            last_meteor[:] = meteor
-            # Update the finished actions
-            # -1 means ended or ignored (already ended)
+            if self.feedback == 'sample':
+                dist = np.zeros(batch_size, np.float32)
+                rouge = np.zeros(batch_size, np.float32)
+                reward = np.zeros(batch_size, np.float32)
+                mask = np.ones(batch_size, np.float32)
+                img_feats_ = torch.stack(img_feats, 1).contiguous()
+                can_feats_ = torch.stack(can_feats, 1).contiguous()
+                ctx_speaker = self.speaker.encoder(can_feats_, img_feats_, length)
+                ctx_mask_speaker = utils.length2mask(length)
+                words = []
+                log_probs = []
+                entropies = []
+                h_t_speaker = torch.zeros(1, batch_size, args.rnn_dim).cuda()
+                c_t_speaker = torch.zeros(1, batch_size, args.rnn_dim).cuda()
+                ended_speaker = np.zeros(len(obs), np.bool)
+                word = np.ones(len(obs), np.int64) * self.tok.word_to_index['<BOS>']
+                word = torch.from_numpy(word).view(-1, 1).cuda()
+                for j in range(args.maxDecode):
+                    logits, h_t_speaker, c_t_speaker = self.speaker.decoder(word, ctx_speaker, ctx_mask_speaker, h_t_speaker, c_t_speaker)
+                    logits = logits.squeeze()
+                    logits[:, self.tok.word_to_index['<UNK>']] = -float("inf")
+                    values, word = logits.max(1)
+                    cpu_word = word.cpu().numpy()
+                    cpu_word[ended_speaker] = self.tok.word_to_index['<PAD>']
+                    words.append(cpu_word)
+                    word = word.view(-1, 1)
+                    ended_speaker = np.logical_or(ended_speaker, cpu_word == self.tok.word_to_index['<EOS>'])
+                    if ended_speaker.all():
+                        break
+                words = np.stack(words,1)
+                for i, ob in enumerate(perm_obs):
+                    dist[i] = ob['distance']
+                    if ended[i]:            # If the action is already finished BEFORE THIS ACTION.
+                        reward[i] = 0.
+                        mask[i] = 0.
+                    else:       # Calculate the reward
+                        action_idx = cpu_a_t[i]
+                        if action_idx == -1:        # If the action now is end
+                            if dist[i] < 3:         # Correct
+                                reward[i] = 2.
+                            else:                   # Incorrect
+                                reward[i] = -2.
+                        else: # The action is not end
+                            words_i = self.speaker.tok.decode_sentence(self.speaker.tok.shrink(words[i]))
+                            rouge[i] = utils.get_rouge(ob['instructions'],words_i)
+                            print('.....................')
+                            print('GT:',ob['instructions'])
+                            print('partial infer:',words_i)
+                            print('rouge:',rouge[i])
+                            reward[i] = (rouge[i])# - last_rouge[i])      # Change of distance
+                rewards.append(reward)
+                masks.append(mask)
+                #last_dist[:] = dist
+                #last_rouge[:] = rouge
+                # Update the finished actions
+                # -1 means ended or ignored (already ended)
             ended[:] = np.logical_or(ended, (cpu_a_t == -1))
 
             # Early exit if all ended
             if ended.all(): 
                 break
-
         if train_rl:
             # Last action in A2C
             input_a_t, f_t, candidate_feat, candidate_leng = self.get_input_feat(perm_obs)
@@ -477,7 +481,6 @@ class Seq2SeqAgent(BaseAgent):
                 assert args.normalize_loss == 'none'
 
             self.loss += rl_loss
-
         if train_ml is not None:
             self.loss += ml_loss * train_ml / batch_size
 

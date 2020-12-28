@@ -16,6 +16,7 @@ from param import args
 
 from pycocoevalcap.tokenizer.ptbtokenizer import PTBTokenizer
 from pycocoevalcap.meteor.meteor import Meteor
+from pycocoevalcap.rouge.rouge import Rouge
 import jieba
 
 # padding, unknown word, end of sentence
@@ -53,6 +54,12 @@ def get_meteor(ref,can):
     ref = {1:[ref]}
     can = {1:[can]}
     score, _ = Meteor().compute_score(ref,can)
+    return score
+
+def get_rouge(ref,can):
+    ref = {1:[ref]}
+    can = {1:[can]}
+    score, _ = Rouge().compute_score(ref,can)
     return score
 
 def load_datasets(splits):
