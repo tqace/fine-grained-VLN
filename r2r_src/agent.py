@@ -416,15 +416,16 @@ class Seq2SeqAgent(BaseAgent):
                         else: # The action is not end
                             words_i = self.speaker.tok.decode_sentence(self.speaker.tok.shrink(words[i]))
                             rouge[i] = utils.get_rouge(ob['instructions'],words_i)
-                            print('.....................')
-                            print('GT:',ob['instructions'])
-                            print('partial infer:',words_i)
-                            print('rouge:',rouge[i])
-                            reward[i] = (rouge[i])# - last_rouge[i])      # Change of distance
+                            #if i == 3:
+                            #    print('.....................')
+                            #    print('GT:',ob['instructions'])
+                            #    print('partial infer:',words_i)
+                            #    print('rouge:',rouge[i])
+                            reward[i] = (rouge[i]- last_rouge[i])      # Change of distance
                 rewards.append(reward)
                 masks.append(mask)
                 #last_dist[:] = dist
-                #last_rouge[:] = rouge
+                last_rouge[:] = rouge
                 # Update the finished actions
                 # -1 means ended or ignored (already ended)
             ended[:] = np.logical_or(ended, (cpu_a_t == -1))

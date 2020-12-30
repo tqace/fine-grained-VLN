@@ -1,7 +1,9 @@
-name=agent_fg
-flag="--attn soft --train listener 
+name=agent
+flag="--attn soft --train validlistener 
       --featdropout 0.3
+      --submit
       --speaker snap/speaker/state_dict/best_val_unseen_bleu
+      --load snap/agent/state_dict/best_val_unseen
       --angleFeatSize 128
       --feedback sample
       --mlWeight 0.2

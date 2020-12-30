@@ -5,6 +5,7 @@ import os
 import utils
 import model
 import torch.nn.functional as F
+from torch.autograd import Variable
 import ipdb
 
 class Speaker():
