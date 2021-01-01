@@ -23,6 +23,7 @@ class Param:
 
         # Load the model from
         self.parser.add_argument("--speaker", default=None)
+        self.parser.add_argument("--speaker_bt", default=None)
         self.parser.add_argument("--listener", default=None)
         self.parser.add_argument("--load", type=str, default=None)
 

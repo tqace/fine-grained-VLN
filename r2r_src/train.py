@@ -103,12 +103,12 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
     writer = SummaryWriter(logdir=log_dir)
     listner = Seq2SeqAgent(train_env, "", tok, args.maxAction)
 
-    speaker = None
+    speaker_bt = None
     if args.self_train:
-        speaker = Speaker(train_env, listner, tok)
-        if args.speaker is not None:
-            print("Load the speaker from %s." % args.speaker)
-            speaker.load(args.speaker)
+        speaker_bt = Speaker(train_env, listner, tok)
+        if args.speaker_bt is not None:
+            print("Load the back translation speaker from %s." % args.speaker_bt)
+            speaker_bt.load(args.speaker_bt)
 
     start_iter = 0
     if args.load is not None:
@@ -142,7 +142,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
 
                     # Train with Back Translation
                     args.ml_weight = 0.6        # Sem-Configuration
-                    listner.accumulate_gradient(feedback_method, speaker=speaker)
+                    listner.accumulate_gradient(feedback_method, speaker=speaker_bt)
                     listner.optim_step()
             else:
                 for _ in range(interval // 2):
@@ -154,7 +154,7 @@ def train(train_env, tok, n_iters, log_every=100, val_envs={}, aug_env=None):
                     # Train with Back Translation
                     listner.env = aug_env
                     args.ml_weight = 0.6
-                    listner.train(1, feedback=feedback_method, speaker=speaker)
+                    listner.train(1, feedback=feedback_method, speaker=speaker_bt)
 
         # Log the training stats to tensorboard
         total = max(sum(listner.logs['total']), 1)
