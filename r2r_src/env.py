@@ -92,7 +92,7 @@ class EnvBatch():
 class R2RBatch():
     ''' Implements the Room to Room navigation task, using discretized viewpoints and pretrained features '''
 
-    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], tokenizer=None,
+    def __init__(self, feature_store, batch_size=100, seed=10, splits=['train'], inst_gap=2,tokenizer=None,
                  name=None):
         self.env = EnvBatch(feature_store=feature_store, batch_size=batch_size)
         if feature_store:
@@ -101,6 +101,11 @@ class R2RBatch():
         if tokenizer:
             self.tok = tokenizer
         scans = []
+            
+        ### data balance
+        path2inst={1:6,2:8,3:13,4:17,5:21,6:25,7:29}
+        filted = 0
+        ###
         for split in splits:
             for item in load_datasets_fg([split]):
                 # Split multiple instructions into separate entries
@@ -117,11 +122,15 @@ class R2RBatch():
                         new_item['instructions'] = subpath+'.'
                         new_item['path_id'] = new_item['instr_id']
                         new_item['path'] = item['path'][item["chunk_view"][j][pathix[0]][0]-1:item["chunk_view"][j][pathix[1]][1]]
+                        if len(new_item['instructions'].split()) < path2inst[len(new_item['path'])]-inst_gap  or len(new_item['instructions'].split()) > path2inst[len(new_item['path'])]+inst_gap:
+                            filted += 1
+                            pass
                         if tokenizer:
                             new_item['instr_encoding'] = tokenizer.encode_sentence(new_item['instructions'])
                         if not tokenizer or new_item['instr_encoding'] is not None:  # Filter the wrong data
                             self.data.append(new_item)
                             scans.append(item['scan'])
+        print('filted:',filted,'all:',len(self.data))
         if name is None:
             self.name = splits[0] if len(splits) > 0 else "FAKE"
         else:

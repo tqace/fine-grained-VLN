@@ -357,7 +357,7 @@ def train_val():
 
     featurized_scans = set([key.split("_")[0] for key in list(feat_dict.keys())])
 
-    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'], tokenizer=tok)
+    train_env = R2RBatch(feat_dict, batch_size=args.batchSize, splits=['train'],inst_gap=args.inst_gap, tokenizer=tok)
     from collections import OrderedDict
 
     val_env_names = ['val_unseen', 'val_seen']
@@ -372,7 +372,7 @@ def train_val():
 
     val_envs = OrderedDict(
         ((split,
-          (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split], tokenizer=tok),
+          (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split],inst_gap=args.inst_gap, tokenizer=tok),
            Evaluation([split], featurized_scans, tok))
           )
          for split in val_env_names
@@ -438,9 +438,9 @@ def train_val_augment():
 
     # Create the training environment
     train_env = R2RBatch(feat_dict, batch_size=args.batchSize,
-                         splits=['train'], tokenizer=tok)
+                         splits=['train'], inst_gap=args.inst_gap,tokenizer=tok)
     aug_env   = R2RBatch(feat_dict, batch_size=args.batchSize,
-                         splits=[aug_path], tokenizer=tok, name='aug')
+                         splits=[aug_path],inst_gap=args.inst_gap, tokenizer=tok, name='aug')
 
     # Printing out the statistics of the dataset
     stats = train_env.get_statistics()
@@ -453,7 +453,7 @@ def train_val_augment():
     print("The average action length of the dataset is %0.4f." % (stats['path']))
 
     # Setup the validation data
-    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split],
+    val_envs = {split: (R2RBatch(feat_dict, batch_size=args.batchSize, splits=[split],inst_gap=args.inst_gap,
                                  tokenizer=tok), Evaluation([split], featurized_scans, tok))
                 for split in ['train', 'val_seen', 'val_unseen']}
 

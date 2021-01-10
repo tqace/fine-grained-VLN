@@ -17,6 +17,7 @@ class Param:
         self.parser.add_argument('--maxDecode', type=int, default=120, help="max input instruction")
         self.parser.add_argument('--maxAction', type=int, default=20, help='Max Action sequence')
         self.parser.add_argument('--batchSize', type=int, default=640)
+        self.parser.add_argument('--inst_gap', type=int, default=2)
         self.parser.add_argument('--ignoreid', type=int, default=-100)
         self.parser.add_argument('--feature_size', type=int, default=2048)
         self.parser.add_argument("--loadOptim",action="store_const", default=False, const=True)
