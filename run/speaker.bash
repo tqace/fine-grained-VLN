@@ -1,4 +1,4 @@
-name=speaker_data_balance_gap10
+name=speaker_debug
 flag="--attn soft --angleFeatSize 128
       --train speaker
       --inst_gap 10
