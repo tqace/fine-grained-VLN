@@ -1,9 +1,9 @@
-name=agent_bt_fg
+name=agent_bt_fg_fixbug
 flag="--attn soft --train validlistener 
       --featdropout 0.3
       --submit
       --speaker snap/speaker/state_dict/best_val_unseen_bleu
-      --load snap/agent_bt_fg/state_dict/best_val_unseen
+      --load snap/agent_bt_fg_fixbug/state_dict/best_val_unseen
       --angleFeatSize 128
       --feedback sample
       --mlWeight 0.2
