@@ -188,7 +188,7 @@ class Speaker():
                     self.path_view_heading[ob['path_id']] = {ob['viewpoint']:ob['heading']}
                 else:
                     self.path_view_heading[ob['path_id']][ob['viewpoint']]=ob['heading']
-            if len(self.path_view_heading)==4675:
+            if len(self.path_view_heading)==783:
                     ipdb.set_trace()
             '''
             img_feats.append(self.listener._feature_variable(obs))
