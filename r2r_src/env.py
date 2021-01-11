@@ -107,7 +107,8 @@ class R2RBatch():
         filted = 0
         ###
         for split in splits:
-            for item in load_datasets_fg([split]):
+            items,pathView2heading = load_datasets_fg([split])
+            for item in items:
                 # Split multiple instructions into separate entries
                 for j,instr in enumerate(item['instructions']):
                     if item['scan'] not in self.env.featurized_scans:   # For fast training
@@ -122,6 +123,7 @@ class R2RBatch():
                         new_item['instructions'] = subpath+'.'
                         new_item['path_id'] = new_item['instr_id']
                         new_item['path'] = item['path'][item["chunk_view"][j][pathix[0]][0]-1:item["chunk_view"][j][pathix[1]][1]]
+                        new_item['heading'] = pathView2heading[str(item['path_id'])][new_item['path'][0]]
                         if len(new_item['instructions'].split()) < path2inst[len(new_item['path'])]-inst_gap  or len(new_item['instructions'].split()) > path2inst[len(new_item['path'])]+inst_gap:
                             filted += 1
                             continue

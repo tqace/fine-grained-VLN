@@ -1,4 +1,4 @@
-name=speaker_gap4
+name=speaker_gap4_heading
 flag="--attn soft --angleFeatSize 128
       --train speaker
       --inst_gap 4

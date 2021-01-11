@@ -95,7 +95,9 @@ def load_datasets_fg(splits):
             new_data = json.load(f)
             data += new_data
     random.setstate(old_state)      # Recover the state of the random generator
-    return data
+    with open('tasks/R2R/data_fg/pathView2heading.json','r') as f:
+        pathView2heading = json.load(f)
+    return data,pathView2heading
 class Tokenizer(object):
     ''' Class to tokenize and encode a sentence. '''
     SENTENCE_SPLIT_REGEX = re.compile(r'(\W+)') # Split on any non-alphanumeric character
