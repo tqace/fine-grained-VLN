@@ -1,7 +1,7 @@
-name=speaker_debug
+name=speaker_gap4
 flag="--attn soft --angleFeatSize 128
       --train speaker
-      --inst_gap 10
+      --inst_gap 4
       --subout max --dropout 0.6 --optim adam --lr 1e-4 --iters 800000 --maxAction 35"
 mkdir -p snap/$name
 CUDA_VISIBLE_DEVICES=$1 python r2r_src/train.py $flag --name $name 
