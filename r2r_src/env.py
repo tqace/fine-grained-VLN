@@ -110,6 +110,8 @@ class R2RBatch():
                     new_item = dict(item)
                     new_item['instr_id'] = '%s_%d' % (item['path_id'], j)
                     new_item['instructions'] = instr
+                    new_item['path_id'] = item['path_id']
+                    new_item['path'] = item['path']
                     if tokenizer:
                         new_item['instr_encoding'] = tokenizer.encode_sentence(instr)
                     if not tokenizer or new_item['instr_encoding'] is not None:  # Filter the wrong data
@@ -294,7 +296,8 @@ class R2RBatch():
                 'navigableLocations' : state.navigableLocations,
                 'instructions' : item['instructions'],
                 'teacher' : self._shortest_path_action(state, item['path'][-1]),
-                'path_id' : item['path_id']
+                'path_id' : item['path_id'],
+                'path' : item['path']
             })
             if 'instr_encoding' in item:
                 obs[-1]['instr_encoding'] = item['instr_encoding']

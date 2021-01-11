@@ -43,6 +43,8 @@ class Speaker():
             size_average=False,
             reduce=False
         )
+        
+        self.path_view_heading={}
 
     def train(self, iters):
         for i in range(iters):
@@ -180,6 +182,13 @@ class Speaker():
             if viewpoints is not None:
                 for i, ob in enumerate(obs):
                     viewpoints[i].append(ob['viewpoint'])
+
+                    if len(self.path_view_heading)==4675:
+                        ipdb.set_trace()
+                    if ob['path_id'] not in self.path_view_heading:
+                        self.path_view_heading[ob['path_id']] = {ob['viewpoint']:ob['heading']}
+                    else:
+                        self.path_view_heading[ob['path_id']][ob['viewpoint']]=ob['heading']
             ipdb.set_trace()
             img_feats.append(self.listener._feature_variable(obs))
             teacher_action = self._teacher_action(obs, ended)
