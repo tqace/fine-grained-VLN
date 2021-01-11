@@ -95,7 +95,7 @@ def load_datasets_fg(splits):
             new_data = json.load(f)
             data += new_data
     random.setstate(old_state)      # Recover the state of the random generator
-    with open('tasks/R2R/data_fg/pathView2heading.json','r') as f:
+    with open('tasks/R2R/data_fg/pathView2heading_%s.json' % split,'r') as f:
         pathView2heading = json.load(f)
     return data,pathView2heading
 class Tokenizer(object):

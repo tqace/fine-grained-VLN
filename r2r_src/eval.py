@@ -25,7 +25,7 @@ class Evaluation(object):
         self.instr_ids = []
         self.scans = []
         for split in splits:
-            for item in load_datasets_fg([split]):
+            for item in load_datasets_fg([split])[0]:
                 for j,instr in enumerate(item['instructions']):
                     if scans is not None and item['scan'] not in scans:
                         continue

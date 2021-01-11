@@ -123,6 +123,9 @@ class R2RBatch():
                         new_item['instructions'] = subpath+'.'
                         new_item['path_id'] = new_item['instr_id']
                         new_item['path'] = item['path'][item["chunk_view"][j][pathix[0]][0]-1:item["chunk_view"][j][pathix[1]][1]]
+                        if new_item['path'][0] not in pathView2heading[str(item['path_id'])]:
+                            print(new_item['path'][0],'not found in',str(item['path_id']))
+                            continue
                         new_item['heading'] = pathView2heading[str(item['path_id'])][new_item['path'][0]]
                         if len(new_item['instructions'].split()) < path2inst[len(new_item['path'])]-inst_gap  or len(new_item['instructions'].split()) > path2inst[len(new_item['path'])]+inst_gap:
                             filted += 1
