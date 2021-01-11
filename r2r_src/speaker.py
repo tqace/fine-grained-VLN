@@ -155,7 +155,7 @@ class Speaker():
         candidate_feat = np.zeros((len(obs), self.feature_size + args.angle_feat_size), dtype=np.float32)
         for i, (ob, act) in enumerate(zip(obs, actions)):
             if act == -1:  # Ignore or Stop --> Just use zero vector as the feature
-                continue
+                pass
             else:
                 c = ob['candidate'][act]
                 candidate_feat[i, :] = c['feature'] # Image feat

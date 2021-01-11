@@ -124,7 +124,7 @@ class R2RBatch():
                         new_item['path'] = item['path'][item["chunk_view"][j][pathix[0]][0]-1:item["chunk_view"][j][pathix[1]][1]]
                         if len(new_item['instructions'].split()) < path2inst[len(new_item['path'])]-inst_gap  or len(new_item['instructions'].split()) > path2inst[len(new_item['path'])]+inst_gap:
                             filted += 1
-                            pass
+                            continue
                         if tokenizer:
                             new_item['instr_encoding'] = tokenizer.encode_sentence(new_item['instructions'])
                         if not tokenizer or new_item['instr_encoding'] is not None:  # Filter the wrong data
