@@ -163,6 +163,7 @@ class Seq2SeqAgent(BaseAgent):
         f_t = self._feature_variable(obs)      # Image features from obs
         candidate_feat, candidate_leng = self._candidate_variable(obs)
 
+        ipdb.set_trace()
         return input_a_t, f_t, candidate_feat, candidate_leng
 
     def _teacher_action(self, obs, ended):

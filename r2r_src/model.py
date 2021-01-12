@@ -252,10 +252,16 @@ class SpeakerEncoder(nn.Module):
         x = self.drop(x)
 
         # Post LSTM layer
-        x, _ = self.post_lstm(x)
+        x, (enc_h_t, enc_c_t) = self.post_lstm(x)
+        if self.num_directions == 2:    # The size of enc_h_t is (num_layers * num_directions, batch, hidden_size)
+            h_t = torch.cat((enc_h_t[-1], enc_h_t[-2]), 1)
+            c_t = torch.cat((enc_c_t[-1], enc_c_t[-2]), 1)
+        else:
+            h_t = enc_h_t[-1]
+            c_t = enc_c_t[-1] # (batch, hidden_size)
         x = self.drop(x)
 
-        return x
+        return x,c_t
 
 class SpeakerDecoder(nn.Module):
     def __init__(self, vocab_size, embedding_size, padding_idx, hidden_size, dropout_ratio):

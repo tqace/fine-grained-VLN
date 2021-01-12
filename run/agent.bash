@@ -1,4 +1,4 @@
-name=agent
+name=agent_GAN
 flag="--attn soft --train listener 
       --featdropout 0.3
       --angleFeatSize 128
