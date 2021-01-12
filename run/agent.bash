@@ -1,8 +1,8 @@
-name=agent_fg_gap4
+name=agent_fg_gap1_heading_dup
 flag="--attn soft --train listener 
       --featdropout 0.3
       --submit
-      --speaker snap/speaker_gap4/state_dict/best_val_unseen_bleu
+      --speaker snap/speaker_gap1_heading/state_dict/best_val_unseen_bleu
       --angleFeatSize 128
       --feedback sample
       --mlWeight 0.2
