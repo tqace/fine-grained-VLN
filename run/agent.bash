@@ -1,9 +1,8 @@
-name=agent_bt_fg_fixbug
-flag="--attn soft --train validlistener 
+name=agent_fg_gap4
+flag="--attn soft --train listener 
       --featdropout 0.3
       --submit
-      --speaker snap/speaker/state_dict/best_val_unseen_bleu
-      --load snap/agent_bt_fg_fixbug/state_dict/best_val_unseen
+      --speaker snap/speaker_gap4/state_dict/best_val_unseen_bleu
       --angleFeatSize 128
       --feedback sample
       --mlWeight 0.2
