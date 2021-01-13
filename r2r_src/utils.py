@@ -1,5 +1,4 @@
 ''' Utils for io, language, connectivity graphs etc '''
-
 import os
 import sys
 import re
@@ -57,7 +56,10 @@ def get_meteor(ref,can):
     return score
 
 def get_rouge(ref,can):
-    ref = {1:[ref]}
+    if type(ref)==list:
+        ref = {1:ref}
+    else:
+        ref = {1:[ref]}
     can = {1:[can]}
     score, _ = Rouge().compute_score(ref,can)
     return score

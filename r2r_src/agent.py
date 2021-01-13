@@ -422,6 +422,8 @@ class Seq2SeqAgent(BaseAgent):
                             #    print('partial infer:',words_i)
                             #    print('rouge:',rouge[i])
                             reward[i] = (rouge[i]- last_rouge[i])      # Change of distance
+                            if t>0:
+                                reward[i] = 1 if reward[i]>0 else -1
                 rewards.append(reward)
                 masks.append(mask)
                 #last_dist[:] = dist
