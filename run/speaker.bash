@@ -1,4 +1,4 @@
-name=speaker
+name=speaker_debug
 flag="--attn soft --angleFeatSize 128
       --train speaker
       --subout max --dropout 0.6 --optim adam --lr 1e-4 --iters 80000 --maxAction 35"

@@ -144,6 +144,10 @@ class Seq2SeqAgent(BaseAgent):
             features[i, :, :] = ob['feature']   # Image feat
         return Variable(torch.from_numpy(features), requires_grad=False).cuda()
 
+
+    def 
+
+
     def _candidate_variable(self, obs):
         candidate_leng = [len(ob['candidate']) + 1 for ob in obs]       # +1 is for the end
         candidate_feat = np.zeros((len(obs), max(candidate_leng), self.feature_size + args.angle_feat_size), dtype=np.float32)
@@ -153,6 +157,16 @@ class Seq2SeqAgent(BaseAgent):
             for j, c in enumerate(ob['candidate']):
                 candidate_feat[i, j, :] = c['feature']                         # Image feat
         return torch.from_numpy(candidate_feat).cuda(), candidate_leng
+    
+    def _act_candidate_variable(self,obs, actions):
+        candidate_feat = np.zeros((len(obs), self.feature_size + args.angle_feat_size), dtype=np.float32)
+        for i, (ob, act) in enumerate(zip(obs, actions)):
+            if act == -1:
+                pass
+            else:
+                c = ob['candidate'][act]
+                candidate_feat[i, :] = c['feature']
+        return torch.from_numpy(candidate_feat).cuda()
 
     def get_input_feat(self, obs):
         input_a_t = np.zeros((len(obs), args.angle_feat_size), np.float32)
@@ -163,7 +177,6 @@ class Seq2SeqAgent(BaseAgent):
         f_t = self._feature_variable(obs)      # Image features from obs
         candidate_feat, candidate_leng = self._candidate_variable(obs)
 
-        ipdb.set_trace()
         return input_a_t, f_t, candidate_feat, candidate_leng
 
     def _teacher_action(self, obs, ended):
@@ -222,7 +235,7 @@ class Seq2SeqAgent(BaseAgent):
                        self.env.env.sims[idx].getState()[0].navigableLocations[select_candidate['idx']].viewpointId
                 take_action(i, idx, select_candidate['idx'])
 
-    def rollout(self, train_ml=None, train_rl=True, reset=True, speaker=None):
+    def rollout(self, train_ml=None, train_rl=True, reset=True, speaker=None, gt_img_feats=None, gt_can_feats=None,gt_viewpoints=None):
         """
         :param train_ml:    The weight to train with maximum likelihood
         :param train_rl:    whether use RL in training
@@ -292,11 +305,16 @@ class Seq2SeqAgent(BaseAgent):
         masks = []
         entropys = []
         ml_loss = 0.
-
+        img_feats = []
+        can_feats = []
+        viewpoints = [[] for i in range(batch_size)]
         h1 = h_t
         for t in range(self.episode_len):
 
             input_a_t, f_t, candidate_feat, candidate_leng = self.get_input_feat(perm_obs)
+            img_feats.append(self._feature_variable(perm_obs))
+            for i, ob in enumerate(perm_obs):
+                viewpoints[i].append(ob['viewpoint'])
             if speaker is not None:       # Apply the env drop mask to the feat
                 candidate_feat[..., :-args.angle_feat_size] *= noise
                 f_t[..., :-args.angle_feat_size] *= noise
@@ -348,7 +366,7 @@ class Seq2SeqAgent(BaseAgent):
             for i, next_id in enumerate(cpu_a_t):
                 if next_id == (candidate_leng[i]-1) or next_id == args.ignoreid or ended[i]:    # The last action is <end>
                     cpu_a_t[i] = -1             # Change the <end> and ignore action to -1
-
+            can_feats.append(self._act_candidate_variable(perm_obs,cpu_a_t))
             # Make action and get the new state
             self.make_equiv_action(cpu_a_t, perm_obs, perm_idx, traj)
             obs = np.array(self.env._get_obs())
@@ -389,7 +407,6 @@ class Seq2SeqAgent(BaseAgent):
             # Early exit if all ended
             if ended.all(): 
                 break
-
         if train_rl:
             # Last action in A2C
             input_a_t, f_t, candidate_feat, candidate_leng = self.get_input_feat(perm_obs)
@@ -447,8 +464,10 @@ class Seq2SeqAgent(BaseAgent):
             self.losses.append(0.)
         else:
             self.losses.append(self.loss.item() / self.episode_len)    # This argument is useless.
-
-        return traj
+        if self.feedback == 'teacher':
+            return traj,img_feats,can_feats,viewpoints
+        else:
+            return traj
 
     def _dijkstra(self):
         """
@@ -765,7 +784,7 @@ class Seq2SeqAgent(BaseAgent):
             self.rollout(train_ml=args.teacher_weight, train_rl=False, **kwargs)
         elif feedback == 'sample':
             self.feedback = 'teacher'
-            self.rollout(train_ml=args.ml_weight, train_rl=False, **kwargs)
+            _,img_feats,can_feats,viewpoints = self.rollout(train_ml=args.ml_weight, train_rl=False, **kwargs)
             self.feedback = 'sample'
             self.rollout(train_ml=None, train_rl=True, **kwargs)
         else:
@@ -803,9 +822,9 @@ class Seq2SeqAgent(BaseAgent):
             elif feedback == 'sample':
                 if args.ml_weight != 0:
                     self.feedback = 'teacher'
-                    self.rollout(train_ml=args.ml_weight, train_rl=False, **kwargs)
+                    _,img_feats,can_feats,viewpoints = self.rollout(train_ml=args.ml_weight, train_rl=False, **kwargs)
                 self.feedback = 'sample'
-                self.rollout(train_ml=None, train_rl=True, **kwargs)
+                self.rollout(train_ml=None, train_rl=True,gt_img_feats=img_feats,gt_can_feats=can_feats,gt_viewpoints=viewpoints, **kwargs)
             else:
                 assert False
 
