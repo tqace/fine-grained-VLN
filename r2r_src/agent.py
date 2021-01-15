@@ -99,6 +99,7 @@ class Seq2SeqAgent(BaseAgent):
         self.encoder = model.EncoderLSTM(tok.vocab_size(), args.wemb, enc_hidden_size, padding_idx,
                                          args.dropout, bidirectional=args.bidir).cuda()
         self.decoder = model.AttnDecoderLSTM(args.aemb, args.rnn_dim, args.dropout, feature_size=self.feature_size + args.angle_feat_size).cuda()
+        self.encoder_gan = model.GanEncoder(self.feature_size+args.angle_feat_size, args.rnn_dim, args.dropout, bidirectional=args.bidir).cuda()
         self.critic = model.Critic().cuda()
         self.models = (self.encoder, self.decoder, self.critic)
 
@@ -145,7 +146,87 @@ class Seq2SeqAgent(BaseAgent):
         return Variable(torch.from_numpy(features), requires_grad=False).cuda()
 
 
-    def 
+    def get_positive(self,can_feats,img_feats):
+        assert len(can_feats)==len(img_feats)
+        batchsize = can_feats[0].shape[0]
+        sampled_can = []
+        sampled_img = []
+        for i in range(batchsize):
+            len_i=0
+            for j in range(len(can_feats)):
+                if not (can_feats[j][i]==0).all():
+                    len_i+=1
+            m = random.randint(0,len_i-2)
+            n = random.randint(m+1,len_i-1)
+            sampled_can_i = []
+            sampled_img_i = []
+            for k in range(m,n+1):
+                sampled_can_i.append(can_feats[k][i])
+                sampled_img_i.append(img_feats[k][i])
+            sampled_can.append(sampled_can_i)
+            sampled_img.append(sampled_img_i)
+        length = [len(x) for x in sampled_can]
+        maxlength = max(length)
+        sampled_can_tensor = [torch.zeros(can_feats[0].shape) for i in range(maxlength)]
+        sampled_img_tensor = [torch.zeros(img_feats[0].shape) for i in range(maxlength)]
+        for i,(sampled_can_i,sampled_img_i) in enumerate(zip(sampled_can,sampled_img)):
+            for j,(can_item,img_item) in enumerate(zip(sampled_can_i,sampled_img_i)):
+                sampled_can_tensor[j][i] = can_item
+                sampled_img_tensor[j][i] = img_item
+
+        return torch.stack(sampled_can_tensor,1).contiguous(),torch.stack(sampled_img_tensor,1).contiguous(),length
+
+    def get_negative(self,can_feats,img_feats,viewpoints,gt_viewpoints):
+        assert len(can_feats)==len(img_feats)
+        batchsize = can_feats[0].shape[0]
+        sampled_can = []
+        sampled_img = []
+        idx2inst = {}
+        count = 0
+        for i in range(batchsize):
+            len_i=0
+            for j in range(len(can_feats)):
+                if not (can_feats[j][i]==0).all():
+                    len_i+=1
+            viewpoints_i = [viewpoints[i][0]] 
+            if len(viewpoints[i])>0:
+                for l  in range(len(viewpoints[i][1:])):
+                    if viewpoints[i][l+1]!=viewpoints[i][l]:
+                        viewpoints_i.append(viewpoints[i][l+1])
+                    else:
+                        break
+            gt_viewpoints_i = list(set(gt_viewpoints[i]))
+            neg_viewpoints_i = []
+            for p,viewpoint in enumerate(viewpoints_i):
+                if viewpoint not in gt_viewpoints_i:
+                    neg_viewpoints_i.append(p)
+            if len(neg_viewpoints_i)==0:
+                continue
+            count+=1
+            idx2inst[count]=i
+            anchor = random.sample(neg_viewpoints_i,1)[0]
+            m = random.randint(0,anchor)
+            n = random.randint(anchor+1,len(viewpoints_i))
+            sampled_can_i = []
+            sampled_img_i = []
+            for k in range(m,n):
+                sampled_can_i.append(can_feats[k][i])
+                sampled_img_i.append(img_feats[k][i])
+            sampled_can.append(sampled_can_i)
+            sampled_img.append(sampled_img_i)
+        length = [len(x) for x in sampled_can]
+        maxlength = max(length)
+        sampled_can_tensor = [torch.zeros(can_feats[0].shape) for i in range(maxlength)]
+        sampled_img_tensor = [torch.zeros(img_feats[0].shape) for i in range(maxlength)]
+        for i,(sampled_can_i,sampled_img_i) in enumerate(zip(sampled_can,sampled_img)):
+            if sampled_can_i==[]:
+                assert sampled_img_i==[]
+                continue
+            for j,(can_item,img_item) in enumerate(zip(sampled_can_i,sampled_img_i)):
+                sampled_can_tensor[j][i] = can_item
+                sampled_img_tensor[j][i] = img_item
+
+        return torch.stack(sampled_can_tensor,1).contiguous(),torch.stack(sampled_img_tensor,1).contiguous(),length,idx2inst
 
 
     def _candidate_variable(self, obs):
@@ -250,7 +331,11 @@ class Seq2SeqAgent(BaseAgent):
 
         if reset:
             # Reset env
-            obs = np.array(self.env.reset())
+            if self.feedback == 'sample':
+                batch = self.env.batch.copy()
+                obs = np.array(self.env.reset(batch=batch))
+            else:
+                obs = np.array(self.env.reset())
         else:
             obs = np.array(self.env._get_obs())
 
@@ -277,7 +362,6 @@ class Seq2SeqAgent(BaseAgent):
         # Reorder the language input for the encoder (do not ruin the original code)
         seq, seq_mask, seq_lengths, perm_idx = self._sort_batch(obs)
         perm_obs = obs[perm_idx]
-
         ctx, h_t, c_t = self.encoder(seq, seq_lengths)
         ctx_mask = seq_mask
 
@@ -407,6 +491,27 @@ class Seq2SeqAgent(BaseAgent):
             # Early exit if all ended
             if ended.all(): 
                 break
+        if self.feedback=='sample':
+            pos_sampled_can_tensor,pos_sampled_img_tensor,pos_lengths = self.get_positive(gt_can_feats,gt_img_feats)
+            neg_sampled_can_tensor,neg_sampled_img_tensor,neg_lengths,idx2inst = self.get_negative(can_feats,img_feats,viewpoints,gt_viewpoints)
+            neg_length = neg_sampled_img_tensor.shape[1]
+            pos_length = pos_sampled_img_tensor.shape[1]
+            if neg_length>pos_length:
+                pad_img_tensor = torch.zeros([neg_sampled_img_tensor.shape[0], neg_length - pos_length, neg_sampled_img_tensor.shape[2], neg_sampled_img_tensor.shape[3]])
+                pos_sampled_img_tensor = torch.cat((pad_img_tensor,pos_sampled_img_tensor),1)
+                pad_can_tensor = torch.zeros([neg_sampled_can_tensor.shape[0], neg_length - pos_length, neg_sampled_can_tensor.shape[2]])
+                pos_sampled_can_tensor = torch.cat((pad_can_tensor,pos_sampled_can_tensor),1)
+            else:
+                pad_img_tensor = torch.zeros([neg_sampled_img_tensor.shape[0], pos_length - neg_length, neg_sampled_img_tensor.shape[2], neg_sampled_img_tensor.shape[3]])
+                neg_sampled_img_tensor = torch.cat((pad_img_tensor,neg_sampled_img_tensor),1)
+                pad_can_tensor = torch.zeros([neg_sampled_can_tensor.shape[0], pos_length - neg_length, neg_sampled_can_tensor.shape[2]])
+                neg_sampled_can_tensor = torch.cat((pad_can_tensor,neg_sampled_can_tensor),1)
+            lengths = torch.from_numpy(np.array(pos_lengths+neg_lengths))
+            sampled_can_tensor = torch.cat((pos_sampled_can_tensor,neg_sampled_can_tensor),0).cuda()
+            sampled_img_tensor = torch.cat((pos_sampled_img_tensor,neg_sampled_img_tensor),0).cuda()
+            c_t,perm_idx = self.encoder_gan(sampled_can_tensor,sampled_img_tensor,lengths)
+
+
         if train_rl:
             # Last action in A2C
             input_a_t, f_t, candidate_feat, candidate_leng = self.get_input_feat(perm_obs)
@@ -460,6 +565,9 @@ class Seq2SeqAgent(BaseAgent):
         if train_ml is not None:
             self.loss += ml_loss * train_ml / batch_size
 
+        if self.feedback == 'sample':
+            self.get_negative(can_feats,img_feats,viewpoints,gt_viewpoints)
+        
         if type(self.loss) is int:  # For safety, it will be activated if no losses are added
             self.losses.append(0.)
         else:

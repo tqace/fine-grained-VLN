@@ -308,3 +308,67 @@ class SpeakerDecoder(nn.Module):
         return logit, h1, c1
 
 
+class GanEncoder(nn.Module):
+    def __init__(self, feature_size, hidden_size, dropout_ratio, bidirectional):
+        super().__init__()
+        self.num_directions = 2 if bidirectional else 1
+        self.hidden_size = hidden_size
+        self.num_layers = 1
+        self.feature_size = feature_size
+
+        if bidirectional:
+            print("BIDIR in speaker encoder!!")
+
+        self.lstm = nn.LSTM(feature_size, self.hidden_size // self.num_directions, self.num_layers,
+                            batch_first=True, dropout=dropout_ratio, bidirectional=bidirectional)
+        self.drop = nn.Dropout(p=dropout_ratio)
+        self.drop3 = nn.Dropout(p=args.featdropout)
+        self.attention_layer = SoftDotAttention(self.hidden_size, feature_size)
+
+        self.post_lstm = nn.LSTM(self.hidden_size, self.hidden_size // self.num_directions, self.num_layers,
+                                 batch_first=True, dropout=dropout_ratio, bidirectional=bidirectional)
+
+    def forward(self, action_embeds, feature, lengths, already_dropfeat=False):
+        """
+        :param action_embeds: (batch_size, length, 2052). The feature of the view
+        :param feature: (batch_size, length, 36, 2052). The action taken (with the image feature)
+        :param lengths: Not used in it
+        :return: context with shape (batch_size, length, hidden_size)
+        """
+        x = action_embeds
+        if not already_dropfeat:
+            x[..., :-args.angle_feat_size] = self.drop3(x[..., :-args.angle_feat_size])            # Do not dropout the spatial features
+
+        # LSTM on the action embed
+        ctx, _ = self.lstm(x)
+        ctx = self.drop(ctx)
+
+        # Att and Handle with the shape
+        batch_size, max_length, _ = ctx.size()
+        if not already_dropfeat:
+            feature[..., :-args.angle_feat_size] = self.drop3(feature[..., :-args.angle_feat_size])   # Dropout the image feature
+        x, _ = self.attention_layer(                        # Attend to the feature map
+            ctx.contiguous().view(-1, self.hidden_size),    # (batch, length, hidden) --> (batch x length, hidden)
+            feature.view(batch_size * max_length, -1, self.feature_size),        # (batch, length, # of images, feature_size) --> (batch x length, # of images, feature_size)
+        )
+        x = x.view(batch_size, max_length, -1)
+        x = self.drop(x)
+        
+        lengths, perm_idx = lengths.sort(0, True)
+        sorted_x = x[perm_idx]
+        ipdb.set_trace()
+        packed_x = pack_padded_sequence(sorted_x, lengths, batch_first=True)
+
+        # Post LSTM layer
+
+        x, (enc_h_t, enc_c_t) = self.post_lstm(packed_x)
+        
+        if self.num_directions == 2:    # The size of enc_h_t is (num_layers * num_directions, batch, hidden_size)
+            h_t = torch.cat((enc_h_t[-1], enc_h_t[-2]), 1)
+            c_t = torch.cat((enc_c_t[-1], enc_c_t[-2]), 1)
+        else:
+            h_t = enc_h_t[-1]
+            c_t = enc_c_t[-1] # (batch, hidden_size)
+        #x = self.drop(x)
+
+        return c_t,perm_idx
