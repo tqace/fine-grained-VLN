@@ -6,6 +6,17 @@ import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from param import args
 
+class Discriminator(nn.Module):
+    def __init__(self,n_feature,n_hidden=1024,n_output=2):
+        super(Discriminator,self).__init__()
+        self.n_hidden = torch.nn.Linear(n_feature, n_hidden)
+        self.out = torch.nn.Linear(n_hidden, n_output)
+
+    def forward(self,x):
+        x = torch.relu(self.n_hidden(x))
+        x = self.out(x)
+        x = torch.nn.functional.softmax(x)
+        return x
 
 class EncoderLSTM(nn.Module):
     ''' Encodes navigation instructions, returning hidden state context (for
@@ -78,8 +89,6 @@ class EncoderLSTM(nn.Module):
         else:
             return ctx, decoder_init, c_t  # (batch, seq_len, hidden_size*num_directions)
                                  # (batch, hidden_size)
-
-
 class SoftDotAttention(nn.Module):
     '''Soft Dot Attention. 
 
@@ -356,7 +365,6 @@ class GanEncoder(nn.Module):
         
         lengths, perm_idx = lengths.sort(0, True)
         sorted_x = x[perm_idx]
-        ipdb.set_trace()
         packed_x = pack_padded_sequence(sorted_x, lengths, batch_first=True)
 
         # Post LSTM layer

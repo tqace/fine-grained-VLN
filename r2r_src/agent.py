@@ -100,6 +100,7 @@ class Seq2SeqAgent(BaseAgent):
                                          args.dropout, bidirectional=args.bidir).cuda()
         self.decoder = model.AttnDecoderLSTM(args.aemb, args.rnn_dim, args.dropout, feature_size=self.feature_size + args.angle_feat_size).cuda()
         self.encoder_gan = model.GanEncoder(self.feature_size+args.angle_feat_size, args.rnn_dim, args.dropout, bidirectional=args.bidir).cuda()
+        self.discriminator = model.Discriminator(args.rnn_dim*2).cuda()
         self.critic = model.Critic().cuda()
         self.models = (self.encoder, self.decoder, self.critic)
 
@@ -107,11 +108,13 @@ class Seq2SeqAgent(BaseAgent):
         self.encoder_optimizer = args.optimizer(self.encoder.parameters(), lr=args.lr)
         self.decoder_optimizer = args.optimizer(self.decoder.parameters(), lr=args.lr)
         self.critic_optimizer = args.optimizer(self.critic.parameters(), lr=args.lr)
-        self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer)
+        self.discriminator_optimizer = args.optimizer(self.discriminator.parameters(), lr=args.lr)
+        self.optimizers = (self.encoder_optimizer, self.decoder_optimizer, self.critic_optimizer,self.discriminator_optimizer)
 
         # Evaluations
         self.losses = []
         self.criterion = nn.CrossEntropyLoss(ignore_index=args.ignoreid, size_average=False)
+        self.discriminator_criterion = nn.CrossEntropyLoss()
 
         # Logs
         sys.stdout.flush()
@@ -202,8 +205,8 @@ class Seq2SeqAgent(BaseAgent):
                     neg_viewpoints_i.append(p)
             if len(neg_viewpoints_i)==0:
                 continue
-            count+=1
             idx2inst[count]=i
+            count+=1
             anchor = random.sample(neg_viewpoints_i,1)[0]
             m = random.randint(0,anchor)
             n = random.randint(anchor+1,len(viewpoints_i))
@@ -363,6 +366,7 @@ class Seq2SeqAgent(BaseAgent):
         seq, seq_mask, seq_lengths, perm_idx = self._sort_batch(obs)
         perm_obs = obs[perm_idx]
         ctx, h_t, c_t = self.encoder(seq, seq_lengths)
+        c_t_inst = c_t.clone()
         ctx_mask = seq_mask
 
         # Init the reward shaping
@@ -391,6 +395,7 @@ class Seq2SeqAgent(BaseAgent):
         ml_loss = 0.
         img_feats = []
         can_feats = []
+        length = np.zeros(len(obs), np.int64)
         viewpoints = [[] for i in range(batch_size)]
         h1 = h_t
         for t in range(self.episode_len):
@@ -451,6 +456,7 @@ class Seq2SeqAgent(BaseAgent):
                 if next_id == (candidate_leng[i]-1) or next_id == args.ignoreid or ended[i]:    # The last action is <end>
                     cpu_a_t[i] = -1             # Change the <end> and ignore action to -1
             can_feats.append(self._act_candidate_variable(perm_obs,cpu_a_t))
+            length+=(1-ended)
             # Make action and get the new state
             self.make_equiv_action(cpu_a_t, perm_obs, perm_idx, traj)
             obs = np.array(self.env._get_obs())
@@ -460,6 +466,16 @@ class Seq2SeqAgent(BaseAgent):
             dist = np.zeros(batch_size, np.float32)
             reward = np.zeros(batch_size, np.float32)
             mask = np.ones(batch_size, np.float32)
+
+            can_tensor = torch.stack(can_feats,1).contiguous()
+            img_tensor = torch.stack(img_feats,1).contiguous()
+            c_t_path,perm_idx_path = self.encoder_gan(can_tensor,img_tensor,torch.from_numpy(length))
+            c_t_inst_resort = torch.zeros([c_t_path.shape[0],c_t_path.shape[1]]).cuda()
+            for i,idx in enumerate(perm_idx_path):
+                c_t_inst_resort[i]=c_t_inst[idx]
+            c_t_merge = torch.cat((c_t_path,c_t_inst_resort),1)
+            logits = self.discriminator(c_t_merge)[:,1]
+            
             for i, ob in enumerate(perm_obs):
                 dist[i] = ob['distance']
                 if ended[i]:            # If the action is already finished BEFORE THIS ACTION.
@@ -473,13 +489,8 @@ class Seq2SeqAgent(BaseAgent):
                         else:                   # Incorrect
                             reward[i] = -2.
                     else:                       # The action is not end
-                        reward[i] = - (dist[i] - last_dist[i])      # Change of distance
-                        if reward[i] > 0:                           # Quantification
-                            reward[i] = 1
-                        elif reward[i] < 0:
-                            reward[i] = -1
-                        else:
-                            raise NameError("The action doesn't change the move")
+                        reward[perm_idx_path[i]] = logits[i]-0.5      # Change of distance
+
             rewards.append(reward)
             masks.append(mask)
             last_dist[:] = dist
@@ -507,9 +518,31 @@ class Seq2SeqAgent(BaseAgent):
                 pad_can_tensor = torch.zeros([neg_sampled_can_tensor.shape[0], pos_length - neg_length, neg_sampled_can_tensor.shape[2]])
                 neg_sampled_can_tensor = torch.cat((pad_can_tensor,neg_sampled_can_tensor),1)
             lengths = torch.from_numpy(np.array(pos_lengths+neg_lengths))
-            sampled_can_tensor = torch.cat((pos_sampled_can_tensor,neg_sampled_can_tensor),0).cuda()
-            sampled_img_tensor = torch.cat((pos_sampled_img_tensor,neg_sampled_img_tensor),0).cuda()
-            c_t,perm_idx = self.encoder_gan(sampled_can_tensor,sampled_img_tensor,lengths)
+            sampled_can_tensor = torch.cat((pos_sampled_can_tensor,neg_sampled_can_tensor,pos_sampled_can_tensor),0).cuda()
+            sampled_img_tensor = torch.cat((pos_sampled_img_tensor,neg_sampled_img_tensor,pos_sampled_img_tensor),0).cuda()
+            c_t_path,perm_idx = self.encoder_gan(sampled_can_tensor,sampled_img_tensor,lengths)
+            
+            c_t_inst_resort = torch.zeros([c_t_path.shape[0],c_t_path.shape[1]]).cuda()
+            label = []
+            for i,idx in enumerate(perm_idx):
+                if idx>batch_size-1:
+                    label.append(0)
+                    if idx<2*batch_size:
+                        c_t_inst_resort[i]=c_t_inst[idx2inst[int(idx%batch_size)]]
+                    else:
+                        c_t_inst_resort[i]=c_t_inst[random.sample([j for j in range(batch_size) if j!=idx%batch_size],1)[0]]
+                else:
+                    label.append(1)
+                    c_t_inst_resort[i]=c_t_inst[idx]
+            c_t_merge = torch.cat((c_t_path,c_t_inst_resort),1)
+            label = torch.from_numpy(np.array(label)).cuda()
+            logits = self.discriminator(c_t_merge)
+            discriminator_loss = self.discriminator_criterion(logits,label)
+            acc = torch.sum(torch.argmax(logits,dim=1) == label)/len(label)
+            self.loss+=discriminator_loss/len(label)
+            
+            #print(discriminator_loss)
+            #print('acc',acc)
 
 
         if train_rl:
@@ -915,6 +948,7 @@ class Seq2SeqAgent(BaseAgent):
         self.encoder.train()
         self.decoder.train()
         self.critic.train()
+        self.discriminator.train()
 
         self.losses = []
         for iter in range(1, n_iters + 1):
@@ -922,6 +956,7 @@ class Seq2SeqAgent(BaseAgent):
             self.encoder_optimizer.zero_grad()
             self.decoder_optimizer.zero_grad()
             self.critic_optimizer.zero_grad()
+            self.discriminator_optimizer.zero_grad()
 
             self.loss = 0
             if feedback == 'teacher':
@@ -944,6 +979,7 @@ class Seq2SeqAgent(BaseAgent):
             self.encoder_optimizer.step()
             self.decoder_optimizer.step()
             self.critic_optimizer.step()
+            self.discriminator_optimizer.step()
 
     def save(self, epoch, path):
         ''' Snapshot models '''
@@ -958,7 +994,8 @@ class Seq2SeqAgent(BaseAgent):
             }
         all_tuple = [("encoder", self.encoder, self.encoder_optimizer),
                      ("decoder", self.decoder, self.decoder_optimizer),
-                     ("critic", self.critic, self.critic_optimizer)]
+                     ("critic", self.critic, self.critic_optimizer),
+                     ('discriminator',self.discriminator,self.discriminator_optimizer)]
         for param in all_tuple:
             create_state(*param)
         torch.save(states, path)
@@ -978,7 +1015,8 @@ class Seq2SeqAgent(BaseAgent):
                 optimizer.load_state_dict(states[name]['optimizer'])
         all_tuple = [("encoder", self.encoder, self.encoder_optimizer),
                      ("decoder", self.decoder, self.decoder_optimizer),
-                     ("critic", self.critic, self.critic_optimizer)]
+                     ("critic", self.critic, self.critic_optimizer),
+                     ('discriminator',self.discriminator,self.discriminator_optimizer)]
         for param in all_tuple:
             recover_state(*param)
         return states['encoder']['epoch'] - 1
